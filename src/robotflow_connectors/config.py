@@ -143,6 +143,41 @@ def load_connector_config() -> ConnectorConfig:
             providers[name] = pcfg
             logger.debug("Provider '%s' configured (auth: %s)", name, pcfg.auth_mode)
 
+    # Merge stored OAuth credentials from AuthStore
+    # (takes precedence over env vars for oauth tokens)
+    try:
+        from .auth.store import AuthStore
+        store = AuthStore()
+        for pname in store.providers:
+            cred = store.get(pname)
+            if not cred:
+                continue
+            defaults = _PROVIDER_DEFAULTS.get(pname, {})
+            if cred.get("type") == "oauth" and not store.is_expired(pname):
+                if pname not in providers:
+                    providers[pname] = ProviderConfig(name=pname)
+                providers[pname].oauth_token = cred["access"]
+                providers[pname].auth_mode = "oauth"
+                providers[pname].account_id = cred.get("account_id", "")
+                if not providers[pname].base_url:
+                    providers[pname].base_url = defaults.get("base_url", "")
+                if not providers[pname].model:
+                    providers[pname].model = defaults.get("model", "")
+                logger.debug(
+                    "Provider '%s' loaded from auth store (oauth)", pname
+                )
+            elif cred.get("type") == "api_key":
+                if pname not in providers:
+                    providers[pname] = ProviderConfig(name=pname)
+                providers[pname].api_key = cred["key"]
+                providers[pname].auth_mode = "api_key"
+                if not providers[pname].base_url:
+                    providers[pname].base_url = defaults.get("base_url", "")
+                if not providers[pname].model:
+                    providers[pname].model = defaults.get("model", "")
+    except Exception as e:
+        logger.debug("Could not load auth store: %s", e)
+
     return ConnectorConfig(
         default_provider=default_provider,
         providers=providers,

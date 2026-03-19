@@ -1,8 +1,11 @@
-"""CLI smoke test — verify all configured providers work.
+"""CLI for robotflow-connectors — provider management and smoke testing.
 
 Usage:
-    robotflow-connectors test
-    robotflow-connectors list
+    robotflow-connectors login <provider>   # OAuth login (claude, codex)
+    robotflow-connectors logout <provider>  # Remove stored credentials
+    robotflow-connectors test               # Smoke test all providers
+    robotflow-connectors list               # Show configured providers
+    robotflow-connectors status             # Show auth status for all providers
 """
 
 from __future__ import annotations
@@ -14,8 +17,7 @@ import time
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: robotflow-connectors <command>")
-        print("Commands: test, list")
+        _print_usage()
         sys.exit(1)
 
     cmd = sys.argv[1]
@@ -23,9 +25,213 @@ def main():
         asyncio.run(_test_providers())
     elif cmd == "list":
         _list_providers()
+    elif cmd == "login":
+        if len(sys.argv) < 3:
+            print("Usage: robotflow-connectors login <provider>")
+            print("Providers: claude, codex")
+            sys.exit(1)
+        asyncio.run(_login(sys.argv[2]))
+    elif cmd == "logout":
+        if len(sys.argv) < 3:
+            print("Usage: robotflow-connectors logout <provider>")
+            sys.exit(1)
+        _logout(sys.argv[2])
+    elif cmd == "status":
+        _show_status()
     else:
         print(f"Unknown command: {cmd}")
+        _print_usage()
         sys.exit(1)
+
+
+def _print_usage():
+    print("Usage: robotflow-connectors <command>")
+    print()
+    print("Commands:")
+    print("  login <provider>   OAuth login (claude, codex)")
+    print("  logout <provider>  Remove stored credentials")
+    print("  test               Smoke test all configured providers")
+    print("  list               Show configured providers")
+    print("  status             Show auth status for all providers")
+
+
+# ── Login / Logout ───────────────────────────────────────────────
+
+
+async def _login(provider: str):
+    """Interactive OAuth login flow — opens browser, stores token."""
+    from .auth.store import AuthStore
+
+    provider = provider.lower().strip()
+    if provider not in ("claude", "codex"):
+        print(f"OAuth login not supported for '{provider}'.")
+        print("Use API keys in .env for: minimax, glm5, kimi")
+        return
+
+    store = AuthStore()
+
+    if provider == "claude":
+        await _login_claude(store)
+    elif provider == "codex":
+        await _login_codex(store)
+
+
+async def _login_claude(store):
+    """Claude OAuth login — paste token from Claude Code CLI."""
+    import httpx
+
+    print("=" * 55)
+    print("  Claude OAuth Login")
+    print("=" * 55)
+    print()
+    print("To get your OAuth token:")
+    print("  1. Open Claude Code CLI (claude)")
+    print("  2. Run: /login")
+    print("  3. Copy the OAuth token displayed")
+    print()
+    print("Or get a session key from claude.ai:")
+    print("  1. Open claude.ai in your browser")
+    print("  2. Open DevTools → Application → Cookies")
+    print("  3. Copy the 'sessionKey' value")
+    print()
+
+    token = input("Paste your Claude token: ").strip()
+    if not token:
+        print("No token provided. Aborting.")
+        return
+
+    print("\nVerifying token...", end=" ", flush=True)
+
+    async with httpx.AsyncClient(timeout=15.0) as http:
+        from .auth.claude_oauth import verify_claude_auth
+
+        result = await verify_claude_auth(
+            http, oauth_token=token, auth_mode="oauth"
+        )
+
+    if result["ok"]:
+        store.set_oauth("claude", access_token=token)
+        print("OK")
+        print(f"\nClaude credentials saved to {store._path}")
+        print("You can now use: robotflow-connectors test")
+    else:
+        print(f"FAILED: {result.get('error', 'unknown')}")
+        print("\nToken was NOT saved. Please check and try again.")
+
+
+async def _login_codex(store):
+    """Codex/ChatGPT OAuth login — paste token from browser."""
+    import httpx
+
+    print("=" * 55)
+    print("  Codex / ChatGPT OAuth Login")
+    print("=" * 55)
+    print()
+    print("To get your OAuth token:")
+    print("  1. Open chatgpt.com in your browser")
+    print("  2. Open DevTools → Network tab")
+    print("  3. Make any request, find Authorization header")
+    print("  4. Copy the Bearer token value")
+    print()
+
+    token = input("Paste your Codex/ChatGPT token: ").strip()
+    if not token:
+        print("No token provided. Aborting.")
+        return
+
+    # Remove "Bearer " prefix if pasted with it
+    if token.lower().startswith("bearer "):
+        token = token[7:]
+
+    account_id = input(
+        "Account ID (optional, press Enter to skip): "
+    ).strip()
+
+    print("\nVerifying token...", end=" ", flush=True)
+
+    async with httpx.AsyncClient(timeout=15.0) as http:
+        from .auth.codex_oauth import verify_codex_auth
+
+        result = await verify_codex_auth(
+            http,
+            oauth_token=token,
+            auth_mode="oauth",
+            account_id=account_id,
+        )
+
+    if result["ok"]:
+        store.set_oauth(
+            "codex",
+            access_token=token,
+            account_id=account_id,
+        )
+        plan = result.get("plan", "")
+        print("OK")
+        if plan:
+            print(f"Plan: {plan}")
+        print(f"\nCodex credentials saved to {store._path}")
+        print("You can now use: robotflow-connectors test")
+    else:
+        print(f"FAILED: {result.get('error', 'unknown')}")
+        print("\nToken was NOT saved. Please check and try again.")
+
+
+def _logout(provider: str):
+    """Remove stored credentials for a provider."""
+    from .auth.store import AuthStore
+
+    provider = provider.lower().strip()
+    store = AuthStore()
+
+    if store.get(provider):
+        store.remove(provider)
+        print(f"Credentials removed for '{provider}'.")
+    else:
+        print(f"No stored credentials for '{provider}'.")
+
+
+# ── Status ───────────────────────────────────────────────────────
+
+
+def _show_status():
+    """Show auth status for all providers."""
+    from .auth.store import AuthStore
+    from .config import load_connector_config
+
+    config = load_connector_config()
+    store = AuthStore()
+
+    print("Provider Status:")
+    print(f"{'Provider':12s} {'Auth':10s} {'Source':12s} {'Status'}")
+    print("-" * 55)
+
+    for name in sorted(
+        set(config.providers.keys()) | set(store.providers)
+    ):
+        pcfg = config.providers.get(name)
+        stored = store.get(name)
+
+        if stored:
+            auth = stored.get("type", "?")
+            source = "auth.json"
+            status = (
+                "EXPIRED"
+                if auth == "oauth" and store.is_expired(name)
+                else "ready"
+            )
+        elif pcfg and (pcfg.api_key or pcfg.oauth_token):
+            auth = pcfg.auth_mode
+            source = ".env"
+            status = "ready"
+        else:
+            auth = "-"
+            source = "-"
+            status = "not configured"
+
+        print(f"  {name:10s} {auth:10s} {source:12s} {status}")
+
+
+# ── List ─────────────────────────────────────────────────────────
 
 
 def _list_providers():
@@ -37,7 +243,9 @@ def _list_providers():
     for name, pcfg in config.providers.items():
         auth = pcfg.auth_mode
         model = pcfg.model or "(default)"
-        key_hint = f"...{pcfg.api_key[-4:]}" if pcfg.api_key else "(none)"
+        key_hint = (
+            f"...{pcfg.api_key[-4:]}" if pcfg.api_key else "(none)"
+        )
         oauth = "yes" if pcfg.oauth_token else "no"
         print(
             f"  {name:10s}  model={model:20s}  "
@@ -51,16 +259,22 @@ def _list_providers():
         print(f"\nNot configured: {', '.join(sorted(missing))}")
 
 
+# ── Test ─────────────────────────────────────────────────────────
+
+
 async def _test_providers():
     from .config import load_connector_config
     from .registry import create_client
 
     config = load_connector_config()
     if not config.providers:
-        print("No providers configured. Set API keys in .env")
+        print("No providers configured.")
+        print("Set API keys in .env or run: robotflow-connectors login")
         return
 
-    print(f"Testing {len(config.providers)} configured provider(s)...\n")
+    print(
+        f"Testing {len(config.providers)} configured provider(s)...\n"
+    )
     results: list[tuple[str, bool, str, float]] = []
 
     for name in sorted(config.providers.keys()):
