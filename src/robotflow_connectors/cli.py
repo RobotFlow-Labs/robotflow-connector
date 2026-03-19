@@ -59,7 +59,7 @@ def _print_usage():
 
 
 async def _login(provider: str):
-    """Interactive OAuth login flow — opens browser, stores token."""
+    """OAuth login — auto-detect, then browser flow, then paste."""
     from .auth.store import AuthStore
 
     provider = provider.lower().strip()
@@ -70,10 +70,93 @@ async def _login(provider: str):
 
     store = AuthStore()
 
-    if provider == "claude":
-        await _login_claude(store)
-    elif provider == "codex":
-        await _login_codex(store)
+    # Try auto-detection first
+    from .auth.token_extractor import (
+        find_claude_token,
+        find_codex_token,
+    )
+
+    found = (
+        find_claude_token()
+        if provider == "claude"
+        else find_codex_token()
+    )
+
+    if found:
+        await _login_with_found_token(store, provider, found)
+        return
+
+    # Launch browser-based login
+    from .auth.browser_auth import run_browser_login
+
+    run_browser_login(provider)
+
+
+async def _login_with_found_token(store, provider, found):
+    """Verify and store an auto-detected token."""
+    import httpx
+
+    token = found["token"]
+    token_type = found["type"]
+    print(
+        f"Found {provider} {token_type} token "
+        f"(auto-detected, ...{token[-4:]})"
+    )
+    print("Verifying...", end=" ", flush=True)
+
+    async with httpx.AsyncClient(timeout=15.0) as http:
+        if provider == "claude":
+            from .auth.claude_oauth import verify_claude_auth
+
+            auth_mode = (
+                "api_key" if token_type == "api_key" else "oauth"
+            )
+            if auth_mode == "api_key":
+                result = await verify_claude_auth(
+                    http, api_key=token, auth_mode="api_key"
+                )
+            else:
+                result = await verify_claude_auth(
+                    http, oauth_token=token, auth_mode="oauth"
+                )
+        else:
+            from .auth.codex_oauth import verify_codex_auth
+
+            auth_mode = (
+                "api_key" if token_type == "api_key" else "oauth"
+            )
+            account_id = found.get("account_id", "")
+            if auth_mode == "api_key":
+                result = await verify_codex_auth(
+                    http, api_key=token, auth_mode="api_key"
+                )
+            else:
+                result = await verify_codex_auth(
+                    http,
+                    oauth_token=token,
+                    auth_mode="oauth",
+                    account_id=account_id,
+                )
+
+    if result["ok"]:
+        if token_type == "api_key":
+            store.set_api_key(provider, token)
+        else:
+            store.set_oauth(
+                provider,
+                access_token=token,
+                account_id=found.get("account_id", ""),
+            )
+        print("OK")
+        print(f"{provider} credentials saved to {store._path}")
+    else:
+        err = result.get("error", "unknown")
+        print(f"FAILED: {err}")
+        print("Falling back to manual login...")
+        if provider == "claude":
+            await _login_claude(store)
+        else:
+            await _login_codex(store)
 
 
 async def _login_claude(store):
