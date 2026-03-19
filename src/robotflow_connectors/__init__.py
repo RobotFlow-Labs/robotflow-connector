@@ -16,7 +16,7 @@ Usage:
 
 from .base import BaseLLMClient, StreamCallbacks
 from .config import ConnectorConfig, load_connector_config
-from .registry import create_client, PROVIDERS
+from .registry import PROVIDERS, create_client
 
 __all__ = [
     "BaseLLMClient",

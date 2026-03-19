@@ -33,13 +33,16 @@ def _list_providers():
 
     config = load_connector_config()
     print(f"Default provider: {config.default_provider}")
-    print(f"Configured providers:")
+    print("Configured providers:")
     for name, pcfg in config.providers.items():
         auth = pcfg.auth_mode
         model = pcfg.model or "(default)"
-        key_preview = f"...{pcfg.api_key[-4:]}" if pcfg.api_key else "(none)"
+        key_hint = f"...{pcfg.api_key[-4:]}" if pcfg.api_key else "(none)"
         oauth = "yes" if pcfg.oauth_token else "no"
-        print(f"  {name:10s}  model={model:20s}  auth={auth:8s}  key={key_preview:12s}  oauth={oauth}")
+        print(
+            f"  {name:10s}  model={model:20s}  "
+            f"auth={auth:8s}  key={key_hint}  oauth={oauth}"
+        )
 
     from .registry import PROVIDERS
 
@@ -71,35 +74,33 @@ async def _test_providers():
             )
             await client.connect()
 
-            # Capture response
-            response_text = ""
-            done_event = asyncio.Event()
+            result = {"text": ""}
+            done = asyncio.Event()
 
-            def on_delta(text, rid):
-                nonlocal response_text
-                response_text += text
-
-            def on_end(text, rid):
-                nonlocal response_text
-                response_text = text
-                done_event.set()
-
-            def on_abort(reason, rid):
-                nonlocal response_text
-                response_text = f"ABORT: {reason}"
-                done_event.set()
-
-            client.callbacks.on_stream_delta = on_delta
-            client.callbacks.on_stream_end = on_end
-            client.callbacks.on_stream_abort = on_abort
+            client.callbacks.on_stream_delta = (
+                lambda text, rid, r=result: r.update(
+                    text=r["text"] + text
+                )
+            )
+            client.callbacks.on_stream_end = (
+                lambda text, rid, r=result, d=done: (
+                    r.update(text=text), d.set()
+                )
+            )
+            client.callbacks.on_stream_abort = (
+                lambda reason, rid, r=result, d=done: (
+                    r.update(text=f"ABORT: {reason}"), d.set()
+                )
+            )
 
             await client.send_message_streaming("Say OK")
-            await asyncio.wait_for(done_event.wait(), timeout=30.0)
+            await asyncio.wait_for(done.wait(), timeout=30.0)
             await client.disconnect()
 
             elapsed = time.monotonic() - t0
-            ok = bool(response_text) and "ABORT" not in response_text
-            preview = response_text[:50].replace("\n", " ")
+            resp = result["text"]
+            ok = bool(resp) and "ABORT" not in resp
+            preview = resp[:50].replace("\n", " ")
             results.append((name, ok, preview, elapsed))
             status = "OK" if ok else "FAIL"
             print(f"{status} ({elapsed:.1f}s) — {preview}")
@@ -109,10 +110,9 @@ async def _test_providers():
             results.append((name, False, str(e)[:50], elapsed))
             print(f"FAIL ({elapsed:.1f}s) — {e}")
 
-    # Summary
     passed = sum(1 for _, ok, _, _ in results if ok)
     total = len(results)
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Results: {passed}/{total} providers working")
 
 

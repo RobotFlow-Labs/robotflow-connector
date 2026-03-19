@@ -9,13 +9,14 @@ One class, different config = different provider.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 
 import httpx
 
 from ..auth.claude_oauth import build_auth_headers as build_claude_headers
-from ..base import BaseLLMClient, LLMConfig, EMOTION_RE, maybe_await
+from ..base import EMOTION_RE, BaseLLMClient, LLMConfig, maybe_await
 
 logger = logging.getLogger(__name__)
 
@@ -68,10 +69,8 @@ class AnthropicCompatClient(BaseLLMClient):
     async def disconnect(self) -> None:
         if self._current_task and not self._current_task.done():
             self._current_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._current_task
-            except asyncio.CancelledError:
-                pass
         if self._http:
             await self._http.aclose()
             self._http = None
@@ -131,9 +130,11 @@ class AnthropicCompatClient(BaseLLMClient):
 
         async with self._http.stream("POST", "/v1/messages", json=payload) as resp:
             if resp.status_code in (401, 403):
+                hint = ("Update your OAuth token." if self._auth_mode == "oauth"
+                        else "Check your API key.")
                 raise RuntimeError(
-                    f"Auth failed for {self._provider_name} (HTTP {resp.status_code}). "
-                    f"{'Update your OAuth token.' if self._auth_mode == 'oauth' else 'Check your API key.'}"
+                    f"Auth failed for {self._provider_name} "
+                    f"(HTTP {resp.status_code}). {hint}"
                 )
             resp.raise_for_status()
 

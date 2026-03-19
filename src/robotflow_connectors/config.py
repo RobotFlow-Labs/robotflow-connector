@@ -88,7 +88,10 @@ def _resolve_provider_from_env(name: str) -> ProviderConfig:
 
     # Claude-specific: check CLAUDE_WEB_SESSION_KEY fallback
     if name == "claude" and not api_key and not oauth_token:
-        session_key = os.environ.get("CLAUDE_WEB_SESSION_KEY", "") or os.environ.get("CLAUDE_AI_SESSION_KEY", "")
+        session_key = (
+            os.environ.get("CLAUDE_WEB_SESSION_KEY", "")
+            or os.environ.get("CLAUDE_AI_SESSION_KEY", "")
+        )
         if session_key:
             oauth_token = session_key
             auth_mode = "oauth"

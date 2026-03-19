@@ -6,8 +6,9 @@ import asyncio
 import logging
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -87,11 +88,11 @@ class BaseLLMClient(ABC):
             self._current_task.cancel()
             logger.info("%s generation interrupted", self.__class__.__name__)
 
-    async def send_state_change(self, state: str) -> None:
-        pass
+    async def send_state_change(self, state: str) -> None:  # noqa: B027
+        """No-op — override if provider needs state notifications."""
 
-    async def send_robot_result(self, command_id: str, result: dict) -> None:
-        pass
+    async def send_robot_result(self, command_id: str, result: dict) -> None:  # noqa: B027
+        """No-op — override if provider supports tool results."""
 
     # ── Shared utilities ─────────────────────────────────────────
 
