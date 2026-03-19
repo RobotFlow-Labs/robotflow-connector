@@ -105,13 +105,23 @@ client = create_client(
 )
 ```
 
-### CLI smoke test
+### CLI commands
 
 ```bash
+# OAuth login (Claude Code or ChatGPT subscription)
+robotflow-connectors login claude
+robotflow-connectors login codex
+
+# Remove stored credentials
+robotflow-connectors logout claude
+
+# Show auth status for all providers
+robotflow-connectors status
+
 # List configured providers
 robotflow-connectors list
 
-# Test all providers
+# Smoke test all configured providers
 robotflow-connectors test
 ```
 
