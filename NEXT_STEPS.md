@@ -1,33 +1,39 @@
 # NEXT_STEPS — robotflow_connectors
 
-## Last Updated: 2026-03-19
+## Last Updated: 2026-03-20
 
 ## What Was Accomplished
-- Package created at `packages/robotflow_connectors/` with full pyproject.toml
-- 5 LLM providers: Claude (Opus 4.6), Codex (ChatGPT 5.4), MiniMax (M2.7), GLM-5, Kimi
-- 2 streaming parsers: AnthropicCompatClient (Anthropic Messages SSE) + OpenAICompatClient (OpenAI Chat Completions SSE)
-- DRY streaming template in BaseLLMClient — providers only implement `_do_stream()`
-- Full auth system: API key + OAuth for Claude and Codex
-- Auth store: ~/.robotflow/auth.json with atomic chmod 600 writes
-- Claude OAuth: Bearer token + anthropic-beta header + web session fallback
-- Codex OAuth: Bearer token + ChatGPT-Account-Id header
-- CLI smoke test: `robotflow-connectors test` and `robotflow-connectors list`
-- Code review fixes: key masking (last 4 chars), TOCTOU race fix, free API verification (/v1/models), safe config parsing
-- 59 tests across 11 test files, all passing
+- Package published at https://github.com/RobotFlow-Labs/robotflow-connector
+- 5 LLM providers configured with correct model names
+- OAuth PKCE login working for Claude and Codex (same flow as Claude Code CLI)
+- 4/5 providers tested and working with real API calls
+- 63 tests, lint clean, CI/CD on GitHub Actions
+
+## Provider Status (Real Tests)
+
+| Provider | Auth | Model | Status |
+|----------|------|-------|--------|
+| claude | OAuth (Max subscription) | claude-haiku-4-5-20251001 | WORKING |
+| codex | OAuth (Pro subscription) | gpt-5.4 | needs gateway proxy |
+| minimax | API key | MiniMax-M2.5 | WORKING |
+| glm5 | API key | glm-5 | WORKING |
+| kimi | API key | kimi-for-coding | WORKING |
+
+## Known Limitations
+- Claude OAuth (Max plan) only allows Haiku via API, not Sonnet/Opus
+- Codex OAuth token doesn't work on api.openai.com (needs chatgpt.com gateway)
+- Both are Anthropic/OpenAI subscription restrictions, not our code bug
+- openclaw works around this by running its own gateway proxy server
 
 ## TODO
 - [ ] Wire robotflow_connectors into reachy-claw (replace anthropic_llm.py)
-- [ ] Add real provider smoke test (requires API keys in .env)
-- [ ] Create standalone repo when ready (github.com/RobotFlow-Labs/robotflow-connectors)
-- [ ] Add VCR cassettes for OAuth verification tests
-- [ ] Integrate into claude-in-the-shell architecture
-- [ ] Add mlx-audio TTS backend as separate module
+- [ ] Add gateway proxy for Codex OAuth (like openclaw does)
+- [ ] Investigate Claude Sonnet/Opus via API key (console.anthropic.com)
+- [ ] Add mlx-audio TTS backend
+- [ ] Publish to PyPI
 
-## Blocking Issues
-- None — package is functional and tested
-
-## MVP Readiness: 75%
+## MVP Readiness: 80%
 - Core package: 100%
-- Auth flows: 90% (token paste works, no browser OAuth yet)
+- Auth flows: 95% (OAuth PKCE working for both)
+- Provider testing: 80% (4/5 working)
 - Integration with reachy-claw: 0% (next step)
-- Real provider testing: 0% (needs API keys)

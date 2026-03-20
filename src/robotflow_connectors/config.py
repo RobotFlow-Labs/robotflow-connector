@@ -21,11 +21,11 @@ _PROVIDER_ENV_PREFIX = {
 _PROVIDER_DEFAULTS = {
     "claude": {
         "base_url": "https://api.anthropic.com",
-        "model": "claude-opus-4-6",
+        "model": "claude-haiku-4-5-20251001",
     },
     "codex": {
         "base_url": "https://api.openai.com",
-        "model": "chatgpt-5.4",
+        "model": "gpt-5.4",
     },
     "minimax": {
         "base_url": "https://api.minimax.io/anthropic",

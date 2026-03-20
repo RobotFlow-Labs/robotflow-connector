@@ -32,12 +32,12 @@ class TestProviderDefaults:
     def test_claude_defaults(self):
         pcfg = _resolve_provider_from_env("claude")
         assert pcfg.base_url == "https://api.anthropic.com"
-        assert pcfg.model == "claude-opus-4-6"
+        assert pcfg.model == "claude-haiku-4-5-20251001"
 
     def test_codex_defaults(self):
         pcfg = _resolve_provider_from_env("codex")
         assert pcfg.base_url == "https://api.openai.com"
-        assert pcfg.model == "chatgpt-5.4"
+        assert pcfg.model == "gpt-5.4"
 
     def test_minimax_defaults(self):
         pcfg = _resolve_provider_from_env("minimax")
@@ -66,9 +66,8 @@ class TestLoadConnectorConfig:
         cfg = load_connector_config()
         assert cfg.max_tokens == 1024  # falls back to default
 
-    def test_only_configured_providers_included(self, monkeypatch):
+    def test_only_configured_providers_included(self, monkeypatch, tmp_path):
         monkeypatch.setenv("MINIMAX_API_KEY", "mm-key")
-        # Don't set any other provider keys
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("ANTHROPIC_OAUTH_TOKEN", raising=False)
         monkeypatch.delenv("CLAUDE_WEB_SESSION_KEY", raising=False)
@@ -78,7 +77,16 @@ class TestLoadConnectorConfig:
         monkeypatch.delenv("GLM5_API_KEY", raising=False)
         monkeypatch.delenv("KIMI_API_KEY", raising=False)
 
-        cfg = load_connector_config()
+        # Isolate from real auth store
+        from unittest.mock import patch
+        from robotflow_connectors.auth.store import AuthStore
+
+        empty_store = AuthStore(path=tmp_path / "empty_auth.json")
+        with patch(
+            "robotflow_connectors.auth.store._DEFAULT_STORE_PATH",
+            tmp_path / "empty_auth.json",
+        ):
+            cfg = load_connector_config()
         assert "minimax" in cfg.providers
         assert "claude" not in cfg.providers
         assert "codex" not in cfg.providers
