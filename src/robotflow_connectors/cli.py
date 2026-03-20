@@ -59,12 +59,14 @@ def _print_usage():
 
 
 async def _login(provider: str):
-    """OAuth login — try CLI first, then browser page, then paste.
+    """OAuth PKCE login — opens browser, gets token automatically.
 
-    Login strategy:
-      1. Check if Claude/Codex CLI is installed and authenticated
-      2. If not authenticated, trigger CLI login (opens browser)
-      3. If CLI not installed, fall back to browser paste page
+    Uses the same OAuth flow as Claude Code CLI and Codex CLI:
+      1. Generate PKCE verifier + challenge
+      2. Open browser to provider's authorize URL
+      3. Local HTTP server catches callback with auth code
+      4. Exchange code for access + refresh tokens
+      5. Store in ~/.robotflow/auth.json
     """
     provider = provider.lower().strip()
     if provider not in ("claude", "codex"):
@@ -72,63 +74,31 @@ async def _login(provider: str):
         print("Use API keys in .env for: minimax, glm5, kimi")
         return
 
-    # Strategy 1: Check if CLI is already authenticated
-    from .auth.cli_auth import (
-        check_claude_cli_auth,
-        check_codex_cli_auth,
-        trigger_claude_login,
-        trigger_codex_login,
-    )
+    from .auth.oauth_pkce import login_claude, login_codex
+    from .auth.store import AuthStore
+
+    store = AuthStore()
 
     if provider == "claude":
-        status = check_claude_cli_auth()
-        if status.get("authenticated"):
-            print("Claude Code CLI is already authenticated!")
-            email = status.get("email", "")
-            if email:
-                print(f"  Account: {email}")
-            plan = status.get("plan", "")
-            if plan:
-                print(f"  Plan: {plan}")
-            print(
-                "\nTo use Claude with robotflow-connectors, "
-                "paste your API key or OAuth token:"
-            )
-        else:
-            print("Claude Code CLI found but not logged in.")
-            print("Launching Claude Code login (opens browser)...\n")
-            success = trigger_claude_login()
-            if success:
-                print("\nClaude login successful!")
-                print(
-                    "Now paste your API key below to store "
-                    "it for robotflow-connectors:"
-                )
-            else:
-                print("\nCLI login failed or was cancelled.")
+        result = await login_claude()
     else:
-        status = check_codex_cli_auth()
-        if status.get("authenticated"):
-            print("Codex CLI is already authenticated!")
-            print(
-                "\nTo use Codex with robotflow-connectors, "
-                "paste your API key or OAuth token:"
-            )
-        else:
-            if "not found" in status.get("error", ""):
-                print("Codex CLI not found.")
-            else:
-                print("Codex CLI found but not logged in.")
-                print("Launching Codex login (opens browser)...\n")
-                success = trigger_codex_login()
-                if success:
-                    print("\nCodex login successful!")
+        result = await login_codex()
 
-    # Strategy 2: Fall back to browser paste page
-    from .auth.browser_auth import run_browser_login
+    if "error" in result:
+        print(f"\nLogin failed: {result['error']}")
+        return
 
-    print()
-    run_browser_login(provider)
+    # Store tokens
+    store.set_oauth(
+        provider,
+        access_token=result["access"],
+        refresh_token=result.get("refresh", ""),
+        expires_at=result.get("expires", 0),
+        account_id=result.get("account_id", ""),
+    )
+
+    print(f"\n{provider} credentials saved to {store._path}")
+    print("Run 'robotflow-connectors test' to verify.")
 
 
 async def _login_with_found_token(store, provider, found):
