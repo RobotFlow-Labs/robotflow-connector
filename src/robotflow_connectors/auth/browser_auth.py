@@ -202,10 +202,10 @@ async function submit() {
     const data = await res.json();
     if (data.ok) {
       status.className = 'status success';
-      let msg = '&#10003; Codex connected!';
-      if (data.plan) msg += ' Plan: ' + data.plan;
+      let msg = 'Codex connected!';
+      if (data.plan) msg += ' Plan: ' + data.plan.replace(/</g,'&lt;');
       msg += ' You can close this tab.';
-      status.innerHTML = msg;
+      status.textContent = msg;
       status.style.display = 'block';
       btn.textContent = 'Connected!';
     } else {
@@ -249,6 +249,10 @@ class _BrowserAuthHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/api/save-token":
             length = int(self.headers.get("Content-Length", 0))
+            if length > 4096:
+                self.send_response(413)
+                self.end_headers()
+                return
             body = json.loads(self.rfile.read(length))
             result = self._save_token(body)
             self.send_response(200)
@@ -351,7 +355,27 @@ def run_browser_login(provider: str) -> bool:
 
     store = AuthStore()
 
-    server = HTTPServer(("127.0.0.1", PORT), _BrowserAuthHandler)
+    try:
+        server = HTTPServer(("127.0.0.1", PORT), _BrowserAuthHandler)
+    except OSError as e:
+        if "Address already in use" in str(e):
+            print(f"Port {PORT} is busy. Trying to free it...")
+            import subprocess
+
+            subprocess.run(
+                f"lsof -ti:{PORT} | xargs kill -9",
+                shell=True,
+                capture_output=True,
+            )
+            import time
+
+            time.sleep(0.5)
+            server = HTTPServer(
+                ("127.0.0.1", PORT), _BrowserAuthHandler
+            )
+        else:
+            raise
+    server.allow_reuse_address = True
     server._store = store
     server._provider = provider
     server._done = False

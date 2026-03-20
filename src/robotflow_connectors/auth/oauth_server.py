@@ -38,20 +38,22 @@ class _OAuthCallbackHandler(BaseHTTPRequestHandler):
 
         # Check for error
         if "error" in params:
+            import html
+
             _OAuthCallbackHandler.error = params["error"][0]
             _OAuthCallbackHandler.received = True
+            safe_err = html.escape(params["error"][0])
             self._send_html(
                 "Authentication Failed",
-                f"<p>Error: {params['error'][0]}</p>"
+                f"<p>Error: {safe_err}</p>"
                 "<p>You can close this tab.</p>",
             )
             return
 
-        # Extract token (different providers use different params)
+        # Extract token — only accept code (not access_token in URL)
         token = (
             params.get("token", [None])[0]
             or params.get("code", [None])[0]
-            or params.get("access_token", [None])[0]
         )
         state = params.get("state", [None])[0]
 
